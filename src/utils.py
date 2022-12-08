@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.init as init
+import torchvision
 
 from torch.utils.data import Dataset, TensorDataset, ConcatDataset
 from torchvision import datasets, transforms
