@@ -4,10 +4,12 @@ global_config:
   is_mp: True
 ---
 data_config:
-  data_path: "./data/"
-  dataset_name: "MNIST"
-  num_shards: 200
-  iid: False
+  dataset_name: "MIMIC-IV"
+  data_dir_path: "/home/benshoho/projects/feature extraction/MIMIC-IV/data/icd10-multi-center/split_by_first_intime/"
+  test_path: "/home/benshoho/projects/feature extraction/MIMIC-IV/data/icd10-multi-center/split_by_first_intime/Med-Surg-Trauma.csv" # change it later by train-test split !
+  vocab_pickle_path: "/home/benshoho/projects/BEHRT/my_data/mimic_iv_icd10_vocab.pkl"
+  max_patient_age: 110
+  max_len_seq: 64
 ---
 
 fed_config:
@@ -35,11 +37,27 @@ model_config:
   #num_hiddens: 200
   #num_classes: 10
   
-  name: CNN
-  in_channels: 1
-  hidden_channels: 32
-  num_hiddens: 512
-  num_classes: 10
+  #name: CNN
+  #in_channels: 1
+  #hidden_channels: 32
+  #num_hiddens: 512
+  #num_classes: 10
+
+  name: CustomBertForMaskedLM
+  #vocab_size: len(BertVocab[token2idx].keys())  # number of disease + symbols for word embedding
+  hidden_size: 288  # word embedding and seg embedding hidden size
+  seg_vocab_size: 2  # number of vocab for seg embedding
+  age_vocab_size: len(ageVocab.keys())  # number of vocab for age embedding
+  max_position_embedding: 64  # maximum number of tokens
+  hidden_dropout_prob: 0.1  # dropout rate
+  num_hidden_layers: 6  # number of multi-head attention layers required
+  num_attention_heads: 12  # number of attention heads
+  attention_probs_dropout_prob: 0.1  # multi-head attention dropout rate
+  intermediate_size: 512  # the size of the "intermediate" layer in the transformer encoder
+  hidden_act: gelu
+  # The non-linear activation function in the encoder and the pooler "gelu", relu, swish are supported
+  initializer_range: 0.02  # parameter weight initializer range
+
 ---
 log_config:
   log_path: "./log/"

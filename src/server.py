@@ -7,6 +7,8 @@ import torch
 import torch.nn as nn
 
 from multiprocessing import pool, cpu_count
+
+from model.MLM import BertForMaskedLM
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from collections import OrderedDict
@@ -34,7 +36,7 @@ class Server(object):
         seed: Int for random seed.
         device: Training machine indicator (e.g. "cpu", "cuda").
         mp_flag: Boolean indicator of the usage of multiprocessing for "client_update" and "client_evaluate" methods.
-        data_path: Path to read data.
+        data_dir_path: Path to read data.
         dataset_name: Name of the dataset.
         num_shards: Number of shards for simulating non-IID data split (valid only when 'iid = False").
         iid: Boolean Indicator of how to split dataset (IID or non-IID).
@@ -51,18 +53,22 @@ class Server(object):
         self.clients = None
         self._round = 0
         self.writer = writer
+        self.vocab_pickle_path = data_config["vocab_pickle_path"]
 
+        model_config['vocab_size'] = len(load_obj(self.vocab_pickle_path)['token2idx'].keys())
+        model_config["age_vocab_size"] =
         self.model = eval(model_config["name"])(**model_config)
         
         self.seed = global_config["seed"]
         self.device = global_config["device"]
         self.mp_flag = global_config["is_mp"]
 
-        self.data_path = data_config["data_path"]
+        self.data_dir_path = data_config["data_path"]
         self.dataset_name = data_config["dataset_name"]
-        self.num_shards = data_config["num_shards"]
-        self.iid = data_config["iid"]
-
+        self.test_path = data_config["test_path"]
+        #self.max_patient_age = data_config["max_patient_age"]
+        self.age_vocab_dict, _ = age_vocab(max_age=data_config["max_patient_age"])
+        self.max_len_seq = data_config["max_len_seq"]
         self.init_config = init_config
 
         self.fraction = fed_config["C"]
@@ -89,7 +95,8 @@ class Server(object):
         del message; gc.collect()
 
         # split local dataset for each client
-        local_datasets, test_dataset = create_datasets(self.data_path, self.dataset_name, self.num_clients, self.num_shards, self.iid)
+        local_datasets, test_dataset = create_datasets(self.data_dir_path, self.test_path, self.vocab_pickle_path,
+                                                       self.age_vocab_dict, self.max_len_seq)
         
         # assign dataset to each client
         self.clients = self.create_clients(local_datasets)
@@ -98,7 +105,7 @@ class Server(object):
         self.data = test_dataset
         self.dataloader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False)
         
-        # configure detailed settings for client upate and 
+        # configure detailed settings for client update and
         self.setup_clients(
             batch_size=self.batch_size,
             criterion=self.criterion, num_local_epochs=self.local_epochs,
@@ -305,12 +312,12 @@ class Server(object):
 
             self.writer.add_scalars(
                 'Loss',
-                {f"[{self.dataset_name}]_{self.model.name} C_{self.fraction}, E_{self.local_epochs}, B_{self.batch_size}, IID_{self.iid}": test_loss},
+                {f"[{self.dataset_name}]_{self.model.name} C_{self.fraction}, E_{self.local_epochs}, B_{self.batch_size}": test_loss},
                 self._round
                 )
             self.writer.add_scalars(
                 'Accuracy', 
-                {f"[{self.dataset_name}]_{self.model.name} C_{self.fraction}, E_{self.local_epochs}, B_{self.batch_size}, IID_{self.iid}": test_accuracy},
+                {f"[{self.dataset_name}]_{self.model.name} C_{self.fraction}, E_{self.local_epochs}, B_{self.batch_size}": test_accuracy},
                 self._round
                 )
 
