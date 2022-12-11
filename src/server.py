@@ -54,20 +54,20 @@ class Server(object):
         self._round = 0
         self.writer = writer
         self.vocab_pickle_path = data_config["vocab_pickle_path"]
+        self.age_vocab_dict, _ = age_vocab(max_age=data_config["max_patient_age"])
 
         model_config['vocab_size'] = len(load_obj(self.vocab_pickle_path)['token2idx'].keys())
-        model_config["age_vocab_size"] =
+        model_config["age_vocab_size"] = len(self.age_vocab_dict.keys())
         self.model = eval(model_config["name"])(**model_config)
         
         self.seed = global_config["seed"]
         self.device = global_config["device"]
         self.mp_flag = global_config["is_mp"]
 
-        self.data_dir_path = data_config["data_path"]
+        self.data_dir_path = data_config["data_dir_path"]
         self.dataset_name = data_config["dataset_name"]
         self.test_path = data_config["test_path"]
         #self.max_patient_age = data_config["max_patient_age"]
-        self.age_vocab_dict, _ = age_vocab(max_age=data_config["max_patient_age"])
         self.max_len_seq = data_config["max_len_seq"]
         self.init_config = init_config
 
@@ -161,7 +161,7 @@ class Server(object):
 
     def sample_clients(self):
         """Select some fraction of all clients."""
-        # sample clients randommly
+        # sample clients randomly
         message = f"[Round: {str(self._round).zfill(4)}] Select clients...!"
         print(message); logging.info(message)
         del message; gc.collect()
@@ -283,13 +283,14 @@ class Server(object):
 
         test_loss, correct = 0, 0
         with torch.no_grad():
-            for data, labels in self.dataloader:
-                data, labels = data.float().to(self.device), labels.long().to(self.device)
-                outputs = self.model(data)
-                test_loss += eval(self.criterion)()(outputs, labels).item()
-                
-                predicted = outputs.argmax(dim=1, keepdim=True)
-                correct += predicted.eq(labels.view_as(predicted)).sum().item()
+            for step, batch in enumerate(self.dataloader):
+                batch = tuple(t.to(self.device) for t in batch)
+                age_ids, input_ids, posi_ids, segment_ids, attMask, masked_label = batch
+                loss, pred, label = self.model(input_ids, age_ids, segment_ids, posi_ids, attention_mask=attMask,
+                                               masked_lm_labels=masked_label)
+                test_loss += loss
+                predicted = pred.argmax(dim=1, keepdim=True) # TODO SHOULD BE CHANGED FOR MULTI-LABEL TASKS!
+                correct += predicted.eq(label.view_as(predicted)).sum().item()
                 
                 if self.device == "cuda": torch.cuda.empty_cache()
         self.model.to("cpu")

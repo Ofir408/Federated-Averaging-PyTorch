@@ -22,6 +22,7 @@ class CustomBertConfig(BertConfig):
         self.seg_vocab_size = config.get('seg_vocab_size')
         self.age_vocab_size = config.get('age_vocab_size')
 
+
 class CustomBertForMaskedLM(BertForMaskedLM):
     def __init__(self, name, **kwargs):
         super(CustomBertForMaskedLM, self).__init__(config=CustomBertConfig(kwargs))

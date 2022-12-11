@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ class Client(object):
         device: Training machine indicator (e.g. "cpu", "cuda").
         __model: torch.nn instance as a local model.
     """
+
     def __init__(self, client_id, local_data, device):
         """Client object is initiated by the center server."""
         self.id = client_id
@@ -58,17 +60,15 @@ class Client(object):
 
         optimizer = eval(self.optimizer)(self.model.parameters(), **self.optim_config)
         for e in range(self.local_epoch):
-            for data, labels in self.dataloader:
-                data, labels = data.float().to(self.device), labels.long().to(self.device)
-  
-                optimizer.zero_grad()
-                outputs = self.model(data)
-                loss = eval(self.criterion)()(outputs, labels)
-
+            for step, batch in enumerate(self.dataloader):
+                batch = tuple(t.to(self.device) for t in batch)
+                age_ids, input_ids, posi_ids, segment_ids, attMask, masked_label = batch
+                loss, pred, label = self.model(input_ids, age_ids, segment_ids, posi_ids, attention_mask=attMask,
+                                               masked_lm_labels=masked_label)
                 loss.backward()
-                optimizer.step() 
-
-                if self.device == "cuda": torch.cuda.empty_cache()               
+                optimizer.step()
+                optimizer.zero_grad()
+                if self.device == "cuda": torch.cuda.empty_cache()
         self.model.to("cpu")
 
     def client_evaluate(self):
@@ -78,13 +78,14 @@ class Client(object):
 
         test_loss, correct = 0, 0
         with torch.no_grad():
-            for data, labels in self.dataloader:
-                data, labels = data.float().to(self.device), labels.long().to(self.device)
-                outputs = self.model(data)
-                test_loss += eval(self.criterion)()(outputs, labels).item()
-                
-                predicted = outputs.argmax(dim=1, keepdim=True)
-                correct += predicted.eq(labels.view_as(predicted)).sum().item()
+            for step, batch in enumerate(self.dataloader):
+                batch = tuple(t.to(self.device) for t in batch)
+                age_ids, input_ids, posi_ids, segment_ids, attMask, masked_label = batch
+                loss, pred, label = self.model(input_ids, age_ids, segment_ids, posi_ids, attention_mask=attMask,
+                                               masked_lm_labels=masked_label)
+                test_loss += loss
+                predicted = pred.argmax(dim=1, keepdim=True) # TODO SHOULD BE CHANGED FOR MULTI-LABEL TASKS!
+                correct += predicted.eq(label.view_as(predicted)).sum().item()
 
                 if self.device == "cuda": torch.cuda.empty_cache()
         self.model.to("cpu")
@@ -95,7 +96,9 @@ class Client(object):
         message = f"\t[Client {str(self.id).zfill(4)}] ...finished evaluation!\
             \n\t=> Test loss: {test_loss:.4f}\
             \n\t=> Test accuracy: {100. * test_accuracy:.2f}%\n"
-        print(message, flush=True); logging.info(message)
-        del message; gc.collect()
+        print(message, flush=True)
+        logging.info(message)
+        del message
+        gc.collect()
 
         return test_loss, test_accuracy
