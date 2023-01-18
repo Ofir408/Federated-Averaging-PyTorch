@@ -5,8 +5,8 @@ global_config:
 ---
 data_config:
   dataset_name: "MIMIC-IV"
-  data_dir_path: "/home/benshoho/projects/feature extraction/MIMIC-IV/data/icd10-multi-center/BEHRT_format/split_by_first_intime/"
-  test_path: "/home/benshoho/projects/feature extraction/MIMIC-IV/data/icd10-multi-center/BEHRT_format/split_by_first_intime/Med-Surg-Trauma.csv" # change it later by train-test split !
+  data_dir_path: "/home/benshoho/projects/feature extraction/MIMIC-IV/data/icd10-multi-center/BEHRT_format/split_by_max_stay_time"
+  test_path: "/home/benshoho/projects/feature extraction/MIMIC-IV/data/icd10-multi-center/BEHRT_format/split_by_max_stay_time/test.csv" # change it later by train-test split !
   vocab_pickle_path: "/home/benshoho/projects/BEHRT/my_data/mimic_iv_icd10_vocab"
   max_patient_age: 110
   max_len_seq: 64
@@ -14,10 +14,10 @@ data_config:
 
 fed_config:
   C: 0.1
-  K: 36
+  K: 39 #todo : should be removed?
   R: 500
-  E: 10
-  B: 10
+  E: 10 # todo: change it later
+  B: 8 # was 10
   criterion: torch.nn.CrossEntropyLoss
   optimizer: torch.optim.SGD
 ---

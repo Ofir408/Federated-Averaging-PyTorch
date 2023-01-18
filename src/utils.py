@@ -1,9 +1,12 @@
 import glob
 import os
 import logging
+from collections import Counter
 from typing import Dict
 
+import numpy as np
 import pandas as pd
+import sklearn
 import torch
 import torch.nn as nn
 import torch.nn.init as init
@@ -12,6 +15,8 @@ from dataLoader.MLM import MLMLoader
 from model.utils import age_vocab
 
 from torch.utils.data import Dataset
+from sklearn.metrics import precision_score
+
 logger = logging.getLogger(__name__)
 
 
@@ -26,8 +31,10 @@ def launch_tensor_board(log_path, port, host):
         port: Port number used for launching TensorBoard.
         host: Address used for launching TensorBoard.
     """
-    os.system(f"tensorboard --logdir={log_path} --port={port} --host={host}")
+    os.system(
+        f"/home/benshoho/.conda/envs/my_env/bin/python -m tensorboard.main --logdir={log_path} --port={port} --host={host}")
     return True
+
 
 #########################
 # Weight initialization #
@@ -43,6 +50,7 @@ def init_weights(model, init_type, init_gain):
     Reference:
         https://github.com/DS3Lab/forest-prediction/blob/master/pix2pix/models/networks.py
     """
+
     def init_func(m):
         classname = m.__class__.__name__
         if hasattr(m, 'weight') and (classname.find('Conv') != -1 or classname.find('Linear') != -1):
@@ -56,11 +64,13 @@ def init_weights(model, init_type, init_gain):
                 raise NotImplementedError(f'[ERROR] ...initialization method [{init_type}] is not implemented!')
             if hasattr(m, 'bias') and m.bias is not None:
                 init.constant_(m.bias.data, 0.0)
-        
+
         elif classname.find('BatchNorm2d') != -1 or classname.find('InstanceNorm2d') != -1:
             init.normal_(m.weight.data, 1.0, init_gain)
-            init.constant_(m.bias.data, 0.0)   
+            init.constant_(m.bias.data, 0.0)
+
     model.apply(init_func)
+
 
 def init_net(model, init_type, init_gain, gpu_ids):
     """Function for initializing network weights.
@@ -75,7 +85,7 @@ def init_net(model, init_type, init_gain, gpu_ids):
         An initialized torch.nn.Module instance.
     """
     if len(gpu_ids) > 0:
-        assert(torch.cuda.is_available())
+        assert (torch.cuda.is_available())
         model.to(gpu_ids[0])
         model = nn.DataParallel(model, gpu_ids)
     init_weights(model, init_type, init_gain)
@@ -91,9 +101,30 @@ def create_dataset(data_path: str, bert_vocab: Dict, age_vocab_dict: Dict, max_l
 def create_datasets(data_dir_path: str, test_path: str, vocab_pickle_path: str, age_vocab_dict: Dict, max_len_seq: int):
     bert_vocab = load_obj(name=vocab_pickle_path)
     local_datasets = []
-    test_dataset = create_dataset(data_path=test_path, bert_vocab=bert_vocab, age_vocab_dict=age_vocab_dict, max_len_seq=max_len_seq)
+    test_dataset = create_dataset(data_path=test_path, bert_vocab=bert_vocab, age_vocab_dict=age_vocab_dict,
+                                  max_len_seq=max_len_seq)
     for data_path in glob.iglob(f'{data_dir_path}/*'):
+        if "test.csv" in data_path:
+            continue
         print(f'data_path={data_path}')
-        dataset = create_dataset(data_path=data_path, bert_vocab=bert_vocab, age_vocab_dict=age_vocab_dict, max_len_seq=max_len_seq)
+        dataset = create_dataset(data_path=data_path, bert_vocab=bert_vocab, age_vocab_dict=age_vocab_dict,
+                                 max_len_seq=max_len_seq)
         local_datasets.append(dataset)
     return local_datasets, test_dataset
+
+
+def calc_acc(label, pred):
+    logs = nn.LogSoftmax(dim=1)
+    label = label.cpu().numpy()
+    ind = np.where(label != -1)[0]
+    truepred = pred.cpu().numpy()
+    truepred = truepred[ind]
+    truelabel = label[ind]
+    truepred = logs(torch.tensor(truepred))
+    outs = [np.argmax(pred_x) for pred_x in truepred.numpy()]
+    if any(x in outs for x in range(5, 17010)):
+        print(f'outs={Counter(outs)}')
+    if len(outs) == 0:
+        return None
+    precision = precision_score(truelabel, outs, average='micro')
+    return precision

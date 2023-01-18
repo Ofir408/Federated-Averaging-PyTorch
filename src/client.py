@@ -2,11 +2,14 @@ import gc
 import pickle
 import logging
 
+import model.optimiser
+import numpy as np
 import torch
 import torch.nn as nn
 
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from src.utils import calc_acc
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +61,9 @@ class Client(object):
         self.model.train()
         self.model.to(self.device)
 
-        optimizer = eval(self.optimizer)(self.model.parameters(), **self.optim_config)
+        #optimizer = eval(self.optimizer)(self.model.parameters(), **self.optim_config)
+        optimizer = model.optimiser.adam(self.model.named_parameters()) # todo: add to configuration
+
         for e in range(self.local_epoch):
             for step, batch in enumerate(self.dataloader):
                 batch = tuple(t.to(self.device) for t in batch)
@@ -75,7 +80,10 @@ class Client(object):
         """Evaluate local model using local dataset (same as training set for convenience)."""
         self.model.eval()
         self.model.to(self.device)
+        batch_precision_results = []
 
+        #y_pred_scores, y_true = [], []
+        total_precision = 0
         test_loss, correct = 0, 0
         with torch.no_grad():
             for step, batch in enumerate(self.dataloader):
@@ -83,15 +91,25 @@ class Client(object):
                 age_ids, input_ids, posi_ids, segment_ids, attMask, masked_label = batch
                 loss, pred, label = self.model(input_ids, age_ids, segment_ids, posi_ids, attention_mask=attMask,
                                                masked_lm_labels=masked_label)
-                test_loss += loss
-                predicted = pred.argmax(dim=1, keepdim=True) # TODO SHOULD BE CHANGED FOR MULTI-LABEL TASKS!
-                correct += predicted.eq(label.view_as(predicted)).sum().item()
+                unpadded_indexes = np.where(label.cpu().numpy() != -1)[0]
+                if len(unpadded_indexes) == 0:
+                    continue
 
+                test_loss += loss
+                batch_precision_result = calc_acc(label, pred)
+                batch_precision_results.append(batch_precision_result)
                 if self.device == "cuda": torch.cuda.empty_cache()
+                #TODO: predicted always 2 (pad)
+                #predicted = pred.argmax(dim=1, keepdim=True) # TODO SHOULD BE CHANGED FOR MULTI-LABEL TASKS!
+                #correct += predicted.eq(label.view_as(predicted)).sum().item()
+                #total_precision += calc_acc(label, pred)
+
+                #if self.device == "cuda": torch.cuda.empty_cache()
         self.model.to("cpu")
 
         test_loss = test_loss / len(self.dataloader)
-        test_accuracy = correct / len(self.data)
+        print(f'client test_loss={test_loss}, len(self.dataloader)={len(self.dataloader)}, test_loss={test_loss}')
+        test_accuracy = sum(batch_precision_results) / len(batch_precision_results)
 
         message = f"\t[Client {str(self.id).zfill(4)}] ...finished evaluation!\
             \n\t=> Test loss: {test_loss:.4f}\
