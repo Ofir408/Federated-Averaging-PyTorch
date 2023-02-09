@@ -2,6 +2,7 @@ import copy
 import gc
 import logging
 
+import model
 import numpy as np
 import torch
 import torch.nn as nn
@@ -60,12 +61,13 @@ class Server(object):
 
         model_config['vocab_size'] = len(load_obj(self.vocab_pickle_path)['token2idx'].keys())
         model_config["age_vocab_size"] = len(self.age_vocab_dict.keys())
+
         self.model = eval(model_config["name"])(**model_config)
 
         self.seed = global_config["seed"]
         self.device = global_config["device"]
         self.mp_flag = global_config["is_mp"]
-
+        self.output_model_path = global_config["output_model_path"]
         self.data_dir_path = data_config["data_dir_path"]
         self.dataset_name = data_config["dataset_name"]
         self.test_path = data_config["test_path"]
@@ -341,6 +343,7 @@ class Server(object):
 
     def fit(self):
         """Execute the whole process of the federated learning."""
+        best_result = 0
         self.results = {"loss": [], "accuracy": []}
         for r in range(self.num_rounds):
             self._round = r + 1
@@ -372,4 +375,11 @@ class Server(object):
             logging.info(message)
             del message
             gc.collect()
+            if test_accuracy > best_result:
+                best_result = test_accuracy
+                print("** ** * Saving fine - tuned model ** ** * ")
+                model_to_save = model.module if hasattr(self.model,
+                                                        'module') else self.model  # Only save the model it-self
+                torch.save(model_to_save.state_dict(), self.output_model_path)
+                print("** ** * DONE Saving fine - tuned model ** ** * ")
         self.transmit_model()

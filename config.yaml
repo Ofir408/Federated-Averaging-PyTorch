@@ -2,12 +2,13 @@ global_config:
   seed: 5959
   device: "cuda"
   is_mp: True
+  output_model_path: "/home/benshoho/projects/BEHRT/my_data/FL_R=1_C=1_E=50-mimic-iv-icd10-with-aggregations-mlm-model"
 ---
 data_config:
   dataset_name: "MIMIC-IV"
   data_dir_path: "/home/benshoho/projects/feature extraction/MIMIC-IV/data/icd10-multi-center/BEHRT_format/split_by_max_stay_time"
-  test_path: "/home/benshoho/projects/feature extraction/MIMIC-IV/data/icd10-multi-center/BEHRT_format/split_by_max_stay_time/test.csv" # change it later by train-test split !
-  vocab_pickle_path: "/home/benshoho/projects/BEHRT/my_data/mimic_iv_icd10_vocab"
+  test_path: "/home/benshoho/projects/feature extraction/MIMIC-IV/data/icd10-multi-center/BEHRT_format/split_by_max_stay_time/test.csv"
+  vocab_pickle_path: "/home/benshoho/projects/BEHRT/my_data/mimic_iv_icd10_with_aggregations_vocab"
   max_patient_age: 110
   max_len_seq: 64
 ---
@@ -31,18 +32,6 @@ init_config:
   gpu_ids: [0]
 ---
 model_config: 
-  #name: TwoNN
-
-  #in_features: 784
-  #num_hiddens: 200
-  #num_classes: 10
-  
-  #name: CNN
-  #in_channels: 1
-  #hidden_channels: 32
-  #num_hiddens: 512
-  #num_classes: 10
-
   name: CustomBertForMaskedLM
   #vocab_size: len(BertVocab[token2idx].keys())  # number of disease + symbols for word embedding
   hidden_size: 288  # word embedding and seg embedding hidden size
@@ -57,10 +46,9 @@ model_config:
   hidden_act: gelu
   # The non-linear activation function in the encoder and the pooler "gelu", relu, swish are supported
   initializer_range: 0.02  # parameter weight initializer range
-
 ---
 log_config:
   log_path: "./log/"
   log_name:  "FL.log"
-  tb_port: 5252
+  tb_port: 9989
   tb_host: "0.0.0.0"

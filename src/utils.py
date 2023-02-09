@@ -122,8 +122,6 @@ def calc_acc(label, pred):
     truelabel = label[ind]
     truepred = logs(torch.tensor(truepred))
     outs = [np.argmax(pred_x) for pred_x in truepred.numpy()]
-    if any(x in outs for x in range(5, 17010)):
-        print(f'outs={Counter(outs)}')
     if len(outs) == 0:
         return None
     precision = precision_score(truelabel, outs, average='micro')
