@@ -15,8 +15,8 @@ from tqdm.auto import tqdm
 from collections import OrderedDict
 
 from .models import *
-from .utils import *
 from .client import Client
+from .utils import *
 
 logger = logging.getLogger(__name__)
 
@@ -56,14 +56,15 @@ class Server(object):
         self.clients = None
         self._round = 0
         self.writer = writer
-        self.vocab_pickle_path = data_config["vocab_pickle_path"]
         self.age_vocab_dict, _ = age_vocab(max_age=data_config["max_patient_age"])
-
-        model_config['vocab_size'] = len(load_obj(self.vocab_pickle_path)['token2idx'].keys())
+        self.bert_vocab = load_obj(data_config["vocab_pickle_path"])
+        model_config['vocab_size'] = len(self.bert_vocab['token2idx'].keys())
         model_config["age_vocab_size"] = len(self.age_vocab_dict.keys())
+        label_vocab = format_label_vocab(self.bert_vocab['token2idx'])
+        model_config["num_labels"] = len(label_vocab.keys())
 
         self.model = eval(model_config["name"])(**model_config)
-
+        self.model = load_pretrained_model(pretrain_model_path=global_config["pretrained_model_path"], model=self.model)
         self.seed = global_config["seed"]
         self.device = global_config["device"]
         self.mp_flag = global_config["is_mp"]
@@ -73,6 +74,7 @@ class Server(object):
         self.test_path = data_config["test_path"]
         # self.max_patient_age = data_config["max_patient_age"]
         self.max_len_seq = data_config["max_len_seq"]
+        self.min_visit = data_config["min_visit"]
         self.init_config = init_config
 
         self.fraction = fed_config["C"]
@@ -83,6 +85,7 @@ class Server(object):
 
         self.criterion = fed_config["criterion"]
         self.optimizer = fed_config["optimizer"]
+        self.mlb = init_multi_label_binarizer(label_vocab=label_vocab)
         self.optim_config = optim_config
 
     def setup(self, **init_kwargs):
@@ -101,8 +104,8 @@ class Server(object):
         gc.collect()
 
         # split local dataset for each client
-        local_datasets, test_dataset = create_datasets(self.data_dir_path, self.test_path, self.vocab_pickle_path,
-                                                       self.age_vocab_dict, self.max_len_seq)
+        local_datasets, test_dataset = create_datasets(self.data_dir_path, self.test_path, self.bert_vocab,
+                                                       self.age_vocab_dict, self.max_len_seq, self.min_visit)
 
         # assign dataset to each client
         self.clients = self.create_clients(local_datasets)
@@ -199,7 +202,7 @@ class Server(object):
 
         selected_total_size = 0
         for idx in tqdm(sampled_client_indices, leave=False):
-            self.clients[idx].client_update()
+            self.clients[idx].client_update(mlb=self.mlb)
             selected_total_size += len(self.clients[idx])
 
         message = f"[Round: {str(self._round).zfill(4)}] ...{len(sampled_client_indices)} clients are selected and updated (with total sample size: {str(selected_total_size)})!"
@@ -219,7 +222,7 @@ class Server(object):
         del message;
         gc.collect()
 
-        self.clients[selected_index].client_update()
+        self.clients[selected_index].client_update(mlb=self.mlb)
         client_size = len(self.clients[selected_index])
 
         message = f"[Round: {str(self._round).zfill(4)}] ...client {str(self.clients[selected_index].id).zfill(4)} is selected and updated (with total sample size: {str(client_size)})!"
@@ -263,7 +266,7 @@ class Server(object):
         gc.collect()
 
         for idx in sampled_client_indices:
-            self.clients[idx].client_evaluate()
+            self.clients[idx].client_evaluate(mlb=self.mlb)
 
         message = f"[Round: {str(self._round).zfill(4)}] ...finished evaluation of {str(len(sampled_client_indices))} selected clients!"
         print(message)
@@ -273,7 +276,7 @@ class Server(object):
 
     def mp_evaluate_selected_models(self, selected_index):
         """Multiprocessing-applied version of "evaluate_selected_models" method."""
-        self.clients[selected_index].client_evaluate()
+        self.clients[selected_index].client_evaluate(mlb=self.mlb)
         return True
 
     def train_federated_model(self):
@@ -314,69 +317,74 @@ class Server(object):
     def evaluate_global_model(self):
         """Evaluate the global model using the global holdout dataset (self.data)."""
         self.model.eval()
+        y = []
+        y_label = []
+        tr_loss = 0
         self.model.to(self.device)
-        batch_precision_results = []
-        test_loss, correct = 0, 0
 
         with torch.no_grad():
             for step, batch in enumerate(self.dataloader):
+                age_ids, input_ids, posi_ids, segment_ids, attMask, targets, _ = batch
+                targets = torch.tensor(self.mlb.transform(targets.numpy()), dtype=torch.float32).to(self.device)
                 batch = tuple(t.to(self.device) for t in batch)
-                age_ids, input_ids, posi_ids, segment_ids, attMask, masked_label = batch
-                loss, pred, label = self.model(input_ids, age_ids, segment_ids, posi_ids, attention_mask=attMask,
-                                               masked_lm_labels=masked_label)
-                unpadded_indexes = np.where(label.cpu().numpy() != -1)[0]
-                if len(unpadded_indexes) == 0:
-                    continue
-                test_loss += loss
-                # predicted = pred.argmax(dim=1, keepdim=True) # TODO SHOULD BE CHANGED FOR MULTI-LABEL TASKS!
-                # correct += predicted.eq(label.view_as(predicted)).sum().item()
-                batch_precision_result = calc_acc(label, pred)
-                batch_precision_results.append(batch_precision_result)
+                age_ids, input_ids, posi_ids, segment_ids, attMask, _, _ = batch
 
-                if self.device == "cuda": torch.cuda.empty_cache()
+                loss, logits = self.model(input_ids, age_ids, segment_ids, posi_ids, attention_mask=attMask,
+                                          labels=targets)
+                logits = logits.cpu()
+                targets = targets.cpu()
+                tr_loss += loss.item()
+                y_label.append(targets)
+                y.append(logits)
+
         self.model.to("cpu")
-
-        test_loss = test_loss / len(self.dataloader)
-        print(f'server test_loss={test_loss}, len(self.dataloader)={len(self.dataloader)}, test_loss={test_loss}')
-        test_accuracy = sum(batch_precision_results) / len(batch_precision_results)
-        return test_loss, test_accuracy  # todo: concat tensors on gpu device
+        y_label = torch.cat(y_label, dim=0)
+        y = torch.cat(y, dim=0)
+        aps, auc_roc, recall, f1, output, label = calc_measurements(y, y_label)
+        return aps, auc_roc, recall, f1, output, tr_loss
 
     def fit(self):
         """Execute the whole process of the federated learning."""
-        best_result = 0
-        self.results = {"loss": [], "accuracy": []}
+        best_aps_result = 0
+        self.results = {"loss": [], "aps": []}
         for r in range(self.num_rounds):
             self._round = r + 1
 
             self.train_federated_model()
-            test_loss, test_accuracy = self.evaluate_global_model()
+            aps, auc_roc, recall, f1, output, tr_loss = self.evaluate_global_model()
 
-            self.results['loss'].append(test_loss)
-            self.results['accuracy'].append(test_accuracy)
+            self.results['loss'].append(tr_loss)
+            self.results['aps'].append(aps)
 
             self.writer.add_scalars(
                 'Loss',
                 {
-                    f"[{self.dataset_name}]_{self.model.name} C_{self.fraction}, E_{self.local_epochs}, B_{self.batch_size}": test_loss},
+                    f"[{self.dataset_name}]_{self.model.name} C_{self.fraction}, E_{self.local_epochs}, B_{self.batch_size}": tr_loss},
                 self._round
             )
             self.writer.add_scalars(
-                'Accuracy',
+                'aps',
                 {
-                    f"[{self.dataset_name}]_{self.model.name} C_{self.fraction}, E_{self.local_epochs}, B_{self.batch_size}": test_accuracy},
+                    f"[{self.dataset_name}]_{self.model.name} C_{self.fraction}, E_{self.local_epochs}, B_{self.batch_size}": aps},
+                self._round
+            )
+            self.writer.add_scalars(
+                'auc_roc',
+                {
+                    f"[{self.dataset_name}]_{self.model.name} C_{self.fraction}, E_{self.local_epochs}, B_{self.batch_size}": auc_roc},
                 self._round
             )
 
             message = f"[Round: {str(self._round).zfill(4)}] Evaluate global model's performance...!\
                 \n\t[Server] ...finished evaluation!\
-                \n\t=> Loss: {test_loss:.4f}\
-                \n\t=> Accuracy: {100. * test_accuracy:.2f}%\n"
+                \n\t=> Loss: {tr_loss:.4f}\
+                \n\t=> aps: {100. * aps:.2f}%\n"
             print(message)
             logging.info(message)
             del message
             gc.collect()
-            if test_accuracy > best_result:
-                best_result = test_accuracy
+            if aps > best_aps_result:
+                best_aps_result = aps
                 print("** ** * Saving fine - tuned model ** ** * ")
                 model_to_save = model.module if hasattr(self.model,
                                                         'module') else self.model  # Only save the model it-self

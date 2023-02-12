@@ -6,10 +6,11 @@ import model.optimiser
 import numpy as np
 import torch
 import torch.nn as nn
+from sklearn.preprocessing import MultiLabelBinarizer
 
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from src.utils import calc_acc
+from src.utils import calc_measurements
 
 logger = logging.getLogger(__name__)
 
@@ -56,67 +57,65 @@ class Client(object):
         self.optimizer = client_config["optimizer"]
         self.optim_config = client_config["optim_config"]
 
-    def client_update(self):
+    def client_update(self, mlb: MultiLabelBinarizer):
         """Update local model using local dataset."""
         self.model.train()
         self.model.to(self.device)
 
-        #optimizer = eval(self.optimizer)(self.model.parameters(), **self.optim_config)
-        optimizer = model.optimiser.adam(self.model.named_parameters()) # todo: add to configuration
+        # optimizer = eval(self.optimizer)(self.model.parameters(), **self.optim_config)
+        optimizer = model.optimiser.adam(self.model.named_parameters())  # todo: add to configuration
 
         for e in range(self.local_epoch):
             for step, batch in enumerate(self.dataloader):
+                age_ids, input_ids, posi_ids, segment_ids, attMask, targets, _ = batch
+                targets = torch.tensor(mlb.transform(targets.numpy()), dtype=torch.float32).to(self.device)
                 batch = tuple(t.to(self.device) for t in batch)
-                age_ids, input_ids, posi_ids, segment_ids, attMask, masked_label = batch
-                loss, pred, label = self.model(input_ids, age_ids, segment_ids, posi_ids, attention_mask=attMask,
-                                               masked_lm_labels=masked_label)
+                age_ids, input_ids, posi_ids, segment_ids, attMask, _, _ = batch
+
+                loss, logits = self.model(input_ids, age_ids, segment_ids, posi_ids, attention_mask=attMask,
+                                          labels=targets)
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
                 if self.device == "cuda": torch.cuda.empty_cache()
         self.model.to("cpu")
 
-    def client_evaluate(self):
+    def client_evaluate(self, mlb: MultiLabelBinarizer):
         """Evaluate local model using local dataset (same as training set for convenience)."""
         self.model.eval()
         self.model.to(self.device)
-        batch_precision_results = []
 
-        #y_pred_scores, y_true = [], []
-        total_precision = 0
-        test_loss, correct = 0, 0
+        y = []
+        y_label = []
+        tr_loss = 0
+
         with torch.no_grad():
             for step, batch in enumerate(self.dataloader):
+                age_ids, input_ids, posi_ids, segment_ids, attMask, targets, _ = batch
+                targets = torch.tensor(mlb.transform(targets.numpy()), dtype=torch.float32).to(self.device)
                 batch = tuple(t.to(self.device) for t in batch)
-                age_ids, input_ids, posi_ids, segment_ids, attMask, masked_label = batch
-                loss, pred, label = self.model(input_ids, age_ids, segment_ids, posi_ids, attention_mask=attMask,
-                                               masked_lm_labels=masked_label)
-                unpadded_indexes = np.where(label.cpu().numpy() != -1)[0]
-                if len(unpadded_indexes) == 0:
-                    continue
+                age_ids, input_ids, posi_ids, segment_ids, attMask, _, _ = batch
+                loss, logits = self.model(input_ids, age_ids, segment_ids, posi_ids, attention_mask=attMask,
+                                          labels=targets)
+                logits = logits.cpu()
+                targets = targets.cpu()
+                tr_loss += loss.item()
+                y_label.append(targets)
+                y.append(logits)
 
-                test_loss += loss
-                batch_precision_result = calc_acc(label, pred)
-                batch_precision_results.append(batch_precision_result)
-                if self.device == "cuda": torch.cuda.empty_cache()
-                #TODO: predicted always 2 (pad)
-                #predicted = pred.argmax(dim=1, keepdim=True) # TODO SHOULD BE CHANGED FOR MULTI-LABEL TASKS!
-                #correct += predicted.eq(label.view_as(predicted)).sum().item()
-                #total_precision += calc_acc(label, pred)
-
-                #if self.device == "cuda": torch.cuda.empty_cache()
         self.model.to("cpu")
+        y_label = torch.cat(y_label, dim=0)
+        y = torch.cat(y, dim=0)
+        aps, auc_roc, recall, f1, output, label = calc_measurements(y, y_label)
 
-        test_loss = test_loss / len(self.dataloader)
+        test_loss = tr_loss / len(self.dataloader)
         print(f'client test_loss={test_loss}, len(self.dataloader)={len(self.dataloader)}, test_loss={test_loss}')
-        test_accuracy = sum(batch_precision_results) / len(batch_precision_results)
 
         message = f"\t[Client {str(self.id).zfill(4)}] ...finished evaluation!\
             \n\t=> Test loss: {test_loss:.4f}\
-            \n\t=> Test accuracy: {100. * test_accuracy:.2f}%\n"
+            \n\t=> Test aps: {100. * aps:.2f}%\n"
         print(message, flush=True)
         logging.info(message)
         del message
         gc.collect()
-
-        return test_loss, test_accuracy
+        return test_loss, aps
