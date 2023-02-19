@@ -5,6 +5,7 @@ import pickle
 import yaml
 import threading
 import logging
+import sys
 
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
@@ -15,7 +16,9 @@ from src.utils import launch_tensor_board
 
 if __name__ == "__main__":
     # read configuration file
-    with open('./config.yaml') as c:
+
+    config_path = sys.argv[1]
+    with open(config_path) as c:
         configs = list(yaml.load_all(c, Loader=yaml.FullLoader))
     global_config = configs[0]["global_config"]
     data_config = configs[1]["data_config"]
@@ -28,7 +31,7 @@ if __name__ == "__main__":
     # modify log_path to contain current time
     log_config["log_path"] = os.path.join(log_config["log_path"], str(datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")))
 
-    # initiate TensorBaord for tracking losses and metrics
+    # initiate TensorBoard for tracking losses and metrics
     writer = SummaryWriter(log_dir=log_config["log_path"], filename_suffix="FL")
     tb_thread = threading.Thread(
         target=launch_tensor_board,
@@ -65,6 +68,14 @@ if __name__ == "__main__":
     
     # bye!
     message = "...done all learning process!\n...exit program!"
-    print(message); logging.info(message)
-    time.sleep(3); exit()
+    print(message)
+    logging.info(message)
+    time.sleep(3)
+    print(f'global_config= {global_config}')
+    print(f'data_config= {data_config}')
+    print(f'log_config= {log_config}')
+    central_server.print_best_results()
+
+    job_cancel_str = "scancel " + os.environ['SLURM_JOBID']
+    os.system(job_cancel_str)
 

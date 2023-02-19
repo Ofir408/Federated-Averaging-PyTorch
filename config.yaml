@@ -18,7 +18,6 @@ data_config:
 
 fed_config:
   C: 0.1
-  K: 39 #todo : should be removed?
   R: 500
   E: 10 # todo: change it later
   B: 8 # was 10

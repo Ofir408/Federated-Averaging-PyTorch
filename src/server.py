@@ -1,6 +1,7 @@
 import copy
 import gc
 import logging
+from operator import itemgetter
 
 import model
 import numpy as np
@@ -64,7 +65,8 @@ class Server(object):
         model_config["num_labels"] = len(label_vocab.keys())
 
         self.model = eval(model_config["name"])(**model_config)
-        self.model = load_pretrained_model(pretrain_model_path=global_config["pretrained_model_path"], model=self.model)
+        self.pretrained_model_path = global_config["pretrained_model_path"]
+        self.model = load_pretrained_model(pretrain_model_path=self.pretrained_model_path, model=self.model)
         self.seed = global_config["seed"]
         self.device = global_config["device"]
         self.mp_flag = global_config["is_mp"]
@@ -78,7 +80,6 @@ class Server(object):
         self.init_config = init_config
 
         self.fraction = fed_config["C"]
-        self.num_clients = fed_config["K"]
         self.num_rounds = fed_config["R"]
         self.local_epochs = fed_config["E"]
         self.batch_size = fed_config["B"]
@@ -131,7 +132,7 @@ class Server(object):
             client = Client(client_id=k, local_data=dataset, device=self.device)
             clients.append(client)
 
-        message = f"[Round: {str(self._round).zfill(4)}] ...successfully created all {str(self.num_clients)} clients!"
+        message = f"[Round: {str(self._round).zfill(4)}] ...successfully created all {str(len(clients))} clients!"
         print(message);
         logging.info(message)
         del message;
@@ -143,7 +144,7 @@ class Server(object):
         for k, client in tqdm(enumerate(self.clients), leave=False):
             client.setup(**client_config)
 
-        message = f"[Round: {str(self._round).zfill(4)}] ...successfully finished setup of all {str(self.num_clients)} clients!"
+        message = f"[Round: {str(self._round).zfill(4)}] ...successfully finished setup of all {str(len(self.clients))} clients!"
         print(message);
         logging.info(message)
         del message;
@@ -158,7 +159,7 @@ class Server(object):
             for client in tqdm(self.clients, leave=False):
                 client.model = copy.deepcopy(self.model)
 
-            message = f"[Round: {str(self._round).zfill(4)}] ...successfully transmitted models to all {str(self.num_clients)} clients!"
+            message = f"[Round: {str(self._round).zfill(4)}] ...successfully transmitted models to all {str(len(self.clients))} clients!"
             print(message);
             logging.info(message)
             del message;
@@ -185,9 +186,9 @@ class Server(object):
         del message;
         gc.collect()
 
-        num_sampled_clients = max(int(self.fraction * self.num_clients), 1)
+        num_sampled_clients = max(int(self.fraction * len(self.clients)), 1)
         sampled_client_indices = sorted(
-            np.random.choice(a=[i for i in range(self.num_clients)], size=num_sampled_clients, replace=False).tolist())
+            np.random.choice(a=[i for i in range(len(self.clients))], size=num_sampled_clients, replace=False).tolist())
 
         return sampled_client_indices
 
@@ -346,32 +347,34 @@ class Server(object):
     def fit(self):
         """Execute the whole process of the federated learning."""
         best_aps_result = 0
-        self.results = {"loss": [], "aps": []}
+        self.results = {"loss": [], "aps": [], 'auc': []}
         for r in range(self.num_rounds):
             self._round = r + 1
 
             self.train_federated_model()
             aps, auc_roc, recall, f1, output, tr_loss = self.evaluate_global_model()
+            pretrained_model_name = self.pretrained_model_path.rsplit('/', 1)[-1]
 
             self.results['loss'].append(tr_loss)
             self.results['aps'].append(aps)
+            self.results['auc'].append(auc_roc)
 
             self.writer.add_scalars(
                 'Loss',
                 {
-                    f"[{self.dataset_name}]_{self.model.name} C_{self.fraction}, E_{self.local_epochs}, B_{self.batch_size}": tr_loss},
+                    f"pretrained_model_name={pretrained_model_name}_min_visit={self.min_visit}_loss": tr_loss},
                 self._round
             )
             self.writer.add_scalars(
                 'aps',
                 {
-                    f"[{self.dataset_name}]_{self.model.name} C_{self.fraction}, E_{self.local_epochs}, B_{self.batch_size}": aps},
+                    f"pretrained_model_name={pretrained_model_name}_min_visit={self.min_visit}_aps": aps},
                 self._round
             )
             self.writer.add_scalars(
                 'auc_roc',
                 {
-                    f"[{self.dataset_name}]_{self.model.name} C_{self.fraction}, E_{self.local_epochs}, B_{self.batch_size}": auc_roc},
+                    f"pretrained_model_name={pretrained_model_name}_min_visit={self.min_visit}_auc_roc": auc_roc},
                 self._round
             )
 
@@ -391,3 +394,8 @@ class Server(object):
                 torch.save(model_to_save.state_dict(), self.output_model_path)
                 print("** ** * DONE Saving fine - tuned model ** ** * ")
         self.transmit_model()
+
+    def print_best_results(self):
+        index, best_aps = max(enumerate(self.results['aps']), key=itemgetter(1))
+        auc = self.results['auc'][index]
+        print(f'best_aps={best_aps}, auc={auc}')

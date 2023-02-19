@@ -3,7 +3,7 @@ import glob
 import os
 import logging
 from collections import Counter
-from typing import Dict, Type
+from typing import Dict, Type, Optional
 
 import numpy as np
 import pandas as pd
@@ -97,16 +97,18 @@ def init_net(model, init_type, init_gain, gpu_ids):
     return model
 
 
-def create_dataset(data_path: str, bert_vocab: Dict, age_vocab_dict: Dict, max_len_seq: int, min_visit: int) -> Dataset:
+def create_dataset(data_path: str, bert_vocab: Dict, age_vocab_dict: Dict, max_len_seq: int, min_visit: int) -> \
+        Optional[NextVisit]:
     df = pd.read_csv(data_path)
     label_vocab = format_label_vocab(bert_vocab['token2idx'])
     token2idx = bert_vocab['token2idx']
     df['length'] = df['code'].apply(lambda codes: count_visits(codes))
     df = df[df['length'] >= min_visit]
     df = df.reset_index(drop=True)
+    if not _is_dataset_valid(df):
+        return None
     return NextVisit(token2idx=token2idx, label2idx=label_vocab, age2idx=age_vocab_dict, dataframe=df,
                      max_len=max_len_seq)
-    # return MLMLoader(dataframe=df, token2idx=token2idx, age2idx=age_vocab_dict, max_len=max_len_seq)
 
 
 def format_label_vocab(token2idx):
@@ -122,18 +124,28 @@ def format_label_vocab(token2idx):
     return label_vocab
 
 
+def _is_dataset_valid(df: pd.DataFrame) -> bool:
+    number_of_rows = df.shape[0]
+    return number_of_rows > 0  # true if valid. false if invalid.
+
+
 def create_datasets(data_dir_path: str, test_path: str, bert_vocab: Dict, age_vocab_dict: Dict, max_len_seq: int,
                     min_visit: int):
     local_datasets = []
     test_dataset = create_dataset(data_path=test_path, bert_vocab=bert_vocab, age_vocab_dict=age_vocab_dict,
                                   max_len_seq=max_len_seq, min_visit=min_visit)
+    if test_dataset is None:
+        raise Exception(f"test dataset {test_path} has zero rows for min_visit={min_visit}! exit..")
     for data_path in glob.iglob(f'{data_dir_path}/*'):
         if "test.csv" in data_path:
             continue
         print(f'data_path={data_path}')
         dataset = create_dataset(data_path=data_path, bert_vocab=bert_vocab, age_vocab_dict=age_vocab_dict,
                                  max_len_seq=max_len_seq, min_visit=min_visit)
-        local_datasets.append(dataset)
+        if dataset is not None:
+            local_datasets.append(dataset)
+        else:
+            print(f'{data_path} is invalid (zero rows) for min_visit={min_visit}')
     return local_datasets, test_dataset
 
 
