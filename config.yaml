@@ -9,7 +9,7 @@ global_config:
 data_config:
   dataset_name: "NextVisit-MIMIC-IV"
   data_dir_path: "/home/benshoho/projects/feature extraction/MIMIC-IV/data/icd10-multi-center/BEHRT_format/next_visit/split_by_max_stay_time/"
-  test_path: "/home/benshoho/projects/feature extraction/MIMIC-IV/data/icd10-multi-center/BEHRT_format/next_visit/split_by_max_stay_time/test.csv"
+  test_path: "/home/benshoho/projects/feature extraction/MIMIC-IV/data/icd10/test_mimic_iv_behrt_with_aggregations_next_visit_ds.csv"
   vocab_pickle_path: "/home/benshoho/projects/BEHRT/my_data/mimic_iv_icd10_with_aggregations_vocab"
   max_patient_age: 110
   max_len_seq: 64
