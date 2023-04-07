@@ -25,8 +25,8 @@ fed_config:
   optimizer: torch.optim.SGD # currently the optimizer is adam hard coded.
 ---
 optim_config:
-  lr: 0.01
-  momentum: 0.9
+  lr: 0.01 # not in used
+  momentum: 0.9 # not in used
 ---
 init_config:
   init_type: "xavier"
