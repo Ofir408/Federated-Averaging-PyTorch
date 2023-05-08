@@ -73,6 +73,8 @@ class Server(object):
         self.test_path = data_config["test_path"]
         # self.max_patient_age = data_config["max_patient_age"]
         self.max_len_seq = data_config["max_len_seq"]
+        self.min_visit = data_config["min_visit"]
+
         self.init_config = init_config
 
         self.fraction = fed_config["C"]
@@ -102,7 +104,7 @@ class Server(object):
 
         # split local dataset for each client
         local_datasets, test_dataset = create_datasets(self.data_dir_path, self.test_path, self.vocab_pickle_path,
-                                                       self.age_vocab_dict, self.max_len_seq)
+                                                       self.age_vocab_dict, self.max_len_seq, self.min_visit)
 
         # assign dataset to each client
         self.clients = self.create_clients(local_datasets)

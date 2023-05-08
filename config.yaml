@@ -2,7 +2,7 @@ global_config:
   seed: 5959
   device: "cuda"
   is_mp: True
-  output_model_path: "/home/benshoho/projects/BEHRT/my_data/FL-mimic-iv-icd10-with-aggregations-mlm-model"
+  output_model_path: "/home/benshoho/projects/BEHRT/my_data/FL-mimic-iv-icd10-with-aggregations-mlm-model-min-visit=3"
 ---
 data_config:
   dataset_name: "MIMIC-IV"
@@ -11,6 +11,7 @@ data_config:
   vocab_pickle_path: "/home/benshoho/projects/BEHRT/my_data/mimic_iv_icd10_with_aggregations_vocab"
   max_patient_age: 110
   max_len_seq: 64
+  min_visit: 3
 ---
 
 fed_config:

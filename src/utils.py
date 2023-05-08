@@ -1,6 +1,7 @@
 import glob
 import os
 import logging
+import ast
 from collections import Counter
 from typing import Dict
 
@@ -92,26 +93,42 @@ def init_net(model, init_type, init_gain, gpu_ids):
     return model
 
 
-def create_dataset(data_path: str, bert_vocab: Dict, age_vocab_dict: Dict, max_len_seq: int) -> Dataset:
+def create_dataset(data_path: str, bert_vocab: Dict, age_vocab_dict: Dict, max_len_seq: int, min_visit: int) -> Dataset:
     df = pd.read_csv(data_path)
     token2idx = bert_vocab['token2idx']
+    df['length'] = df['code'].apply(lambda codes: count_visits(codes))
+    df = df[df['length'] >= min_visit]
+    df = df.reset_index(drop=True)
+    if not _is_dataset_valid(df):
+        return None
     return MLMLoader(dataframe=df, token2idx=token2idx, age2idx=age_vocab_dict, max_len=max_len_seq)
 
+def _is_dataset_valid(df: pd.DataFrame) -> bool:
+    number_of_rows = df.shape[0]
+    return number_of_rows > 0  # true if valid. false if invalid.
 
-def create_datasets(data_dir_path: str, test_path: str, vocab_pickle_path: str, age_vocab_dict: Dict, max_len_seq: int):
+def count_visits(codes) -> int:
+    return len([code for code in ast.literal_eval(codes) if code == 'SEP'])
+
+
+def create_datasets(data_dir_path: str, test_path: str, vocab_pickle_path: str, age_vocab_dict: Dict, max_len_seq: int, min_visit: int):
     bert_vocab = load_obj(name=vocab_pickle_path)
     local_datasets = []
     test_dataset = create_dataset(data_path=test_path, bert_vocab=bert_vocab, age_vocab_dict=age_vocab_dict,
-                                  max_len_seq=max_len_seq)
+                                  max_len_seq=max_len_seq, min_visit=min_visit)
+    if test_dataset is None:
+        raise Exception(f"test dataset {test_path} has zero rows for min_visit={min_visit}! exit..")
     for data_path in glob.iglob(f'{data_dir_path}/*'):
         if "test.csv" in data_path:
             continue
         print(f'data_path={data_path}')
         dataset = create_dataset(data_path=data_path, bert_vocab=bert_vocab, age_vocab_dict=age_vocab_dict,
-                                 max_len_seq=max_len_seq)
-        local_datasets.append(dataset)
+                                 max_len_seq=max_len_seq, min_visit=min_visit)
+        if dataset is not None:
+            local_datasets.append(dataset)
+        else:
+            print(f'{data_path} is invalid (zero rows) for min_visit={min_visit}')
     return local_datasets, test_dataset
-
 
 def calc_acc(label, pred):
     logs = nn.LogSoftmax(dim=1)
