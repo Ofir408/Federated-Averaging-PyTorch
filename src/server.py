@@ -38,9 +38,9 @@ class Server(object):
         seed: Int for random seed.
         device: Training machine indicator (e.g. "cpu", "cuda").
         mp_flag: Boolean indicator of the usage of multiprocessing for "client_update" and "client_evaluate" methods.
-        data_dir_path: Path to read data.
+        data_dir_path: Path to read example_data.
         dataset_name: Name of the dataset.
-        num_shards: Number of shards for simulating non-IID data split (valid only when 'iid = False").
+        num_shards: Number of shards for simulating non-IID example_data split (valid only when 'iid = False").
         iid: Boolean Indicator of how to split dataset (IID or non-IID).
         init_config: kwargs for the initialization of the model.
         fraction: Ratio for the number of clients selected in each federated round.
@@ -48,12 +48,9 @@ class Server(object):
         local_epochs: Epochs required for client model update.
         batch_size: Batch size for updating/evaluating a client/global model.
         criterion: torch.nn instance for calculating loss.
-        optimizer: torch.optim instance for updating parameters.
-        optim_config: Kwargs provided for optimizer.
     """
 
-    def __init__(self, writer, model_config={}, global_config={}, data_config={}, init_config={}, fed_config={},
-                 optim_config={}):
+    def __init__(self, writer, model_config={}, global_config={}, data_config={}, init_config={}, fed_config={}):
         self.clients = None
         self._round = 0
         self.writer = writer
@@ -84,10 +81,7 @@ class Server(object):
         self.local_epochs = fed_config["E"]
         self.batch_size = fed_config["B"]
 
-        self.criterion = fed_config["criterion"]
-        self.optimizer = fed_config["optimizer"]
         self.mlb = init_multi_label_binarizer(label_vocab=label_vocab)
-        self.optim_config = optim_config
 
     def setup(self, **init_kwargs):
         """Set up all configuration for federated learning."""
@@ -118,8 +112,7 @@ class Server(object):
         # configure detailed settings for client update and
         self.setup_clients(
             batch_size=self.batch_size,
-            criterion=self.criterion, num_local_epochs=self.local_epochs,
-            optimizer=self.optimizer, optim_config=self.optim_config
+            num_local_epochs=self.local_epochs,
         )
 
         # send the model skeleton to all clients
@@ -316,7 +309,7 @@ class Server(object):
         self.average_model(sampled_client_indices, mixing_coefficients)
 
     def evaluate_global_model(self):
-        """Evaluate the global model using the global holdout dataset (self.data)."""
+        """Evaluate the global model using the global holdout dataset (self.example_data)."""
         self.model.eval()
         y = []
         y_label = []

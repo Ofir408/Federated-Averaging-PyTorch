@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 #######################
 def launch_tensor_board(log_path, port, host):
     """Function for initiating TensorBoard.
-    
+
     Args:
         log_path: Path where the log is stored.
         port: Port number used for launching TensorBoard.
@@ -46,12 +46,12 @@ def launch_tensor_board(log_path, port, host):
 #########################
 def init_weights(model, init_type, init_gain):
     """Function for initializing network weights.
-    
+
     Args:
         model: A torch.nn instance to be initialized.
         init_type: Name of an initialization method (normal | xavier | kaiming | orthogonal).
         init_gain: Scaling factor for (normal | xavier | orthogonal).
-    
+
     Reference:
         https://github.com/DS3Lab/forest-prediction/blob/master/pix2pix/models/networks.py
     """
@@ -79,13 +79,13 @@ def init_weights(model, init_type, init_gain):
 
 def init_net(model, init_type, init_gain, gpu_ids):
     """Function for initializing network weights.
-    
+
     Args:
         model: A torch.nn.Module to be initialized
         init_type: Name of an initialization method (normal | xavier | kaiming | orthogonal)l
         init_gain: Scaling factor for (normal | xavier | orthogonal).
         gpu_ids: List or int indicating which GPU(s) the network runs on. (e.g., [0, 1, 2], 0)
-    
+
     Returns:
         An initialized torch.nn.Module instance.
     """

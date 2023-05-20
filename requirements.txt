@@ -4,8 +4,6 @@ numpy >= 1.19
 pyyaml~=6.0
 tensorboard
 tqdm~=4.64.1
-#pip==22.3.1
 git+https://github.com/Ofir408/BEHRT.git@master
-#tensorboard==2.11.0
 pytorch-pretrained-bert
 h5py

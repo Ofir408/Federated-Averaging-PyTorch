@@ -2,15 +2,15 @@ global_config:
   seed: 5959
   device: "cuda"
   is_mp: True
-  output_model_path: "/home/benshoho/projects/BEHRT/my_data/FL_next_visit_model_with-aggregations"
-  pretrained_model_path: "/home/benshoho/projects/BEHRT/my_data/FL-mimic-iv-icd10-with-aggregations-mlm-model"  # pretrained MLM path
+  output_model_path: "next-visit-model"
+  pretrained_model_path: "FL-mimic-iv-icd10-with-aggregations-mlm-model"  # pretrained MLM path
 
 ---
 data_config:
   dataset_name: "NextVisit-MIMIC-IV"
-  data_dir_path: "/home/benshoho/projects/feature extraction/MIMIC-IV/data/icd10-multi-center/BEHRT_format/next_visit/split_by_max_stay_time/"
-  test_path: "/home/benshoho/projects/feature extraction/MIMIC-IV/data/icd10/test_mimic_iv_behrt_with_aggregations_next_visit_ds.csv"
-  vocab_pickle_path: "/home/benshoho/projects/BEHRT/my_data/mimic_iv_icd10_with_aggregations_vocab"
+  data_dir_path: "/home/benshoho/projects/feature extraction/MIMIC-IV/example_data/icd10-multi-center/BEHRT_format/next_visit/split_by_max_stay_time/"
+  test_path: "test_mimic_iv_behrt_with_aggregations_next_visit_ds.csv"
+  vocab_pickle_path: "mimic_iv_icd10_with_aggregations_vocab"
   max_patient_age: 110
   max_len_seq: 64
   min_visit: 1
@@ -21,12 +21,6 @@ fed_config:
   R: 500
   E: 10 # todo: change it later
   B: 8 # was 10
-  criterion: torch.nn.CrossEntropyLoss
-  optimizer: torch.optim.SGD # currently the optimizer is adam hard coded.
----
-optim_config:
-  lr: 0.01 # not in used
-  momentum: 0.9 # not in used
 ---
 init_config:
   init_type: "xavier"

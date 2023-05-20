@@ -16,14 +16,14 @@ logger = logging.getLogger(__name__)
 
 
 class Client(object):
-    """Class for client object having its own (private) data and resources to train a model.
+    """Class for client object having its own (private) example_data and resources to train a model.
 
     Participating client has its own dataset which are usually non-IID compared to other clients.
     Each client only communicates with the center server with its trained parameters or globally aggregated parameters.
 
     Attributes:
         id: Integer indicating client's id.
-        data: torch.utils.data.Dataset instance containing local data.
+        data: torch.utils.example_data.Dataset instance containing local example_data.
         device: Training machine indicator (e.g. "cpu", "cuda").
         __model: torch.nn instance as a local model.
     """
@@ -46,24 +46,20 @@ class Client(object):
         self.__model = model
 
     def __len__(self):
-        """Return a total size of the client's local data."""
+        """Return a total size of the client's local example_data."""
         return len(self.data)
 
     def setup(self, **client_config):
         """Set up common configuration of each client; called by center server."""
         self.dataloader = DataLoader(self.data, batch_size=client_config["batch_size"], shuffle=True)
         self.local_epoch = client_config["num_local_epochs"]
-        self.criterion = client_config["criterion"]
-        self.optimizer = client_config["optimizer"]
-        self.optim_config = client_config["optim_config"]
 
     def client_update(self, mlb: MultiLabelBinarizer):
         """Update local model using local dataset."""
         self.model.train()
         self.model.to(self.device)
 
-        # optimizer = eval(self.optimizer)(self.model.parameters(), **self.optim_config)
-        optimizer = model.optimiser.adam(self.model.named_parameters())  # todo: add to configuration
+        optimizer = model.optimiser.adam(self.model.named_parameters())
 
         for e in range(self.local_epoch):
             for step, batch in enumerate(self.dataloader):
